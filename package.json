@@ -19,12 +19,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/HaruHunab1320/parallax",
-    "directory": "packages/coding-agent-adapters"
+    "url": "https://github.com/HaruHunab1320/coding-agent-adapters.git"
   },
-  "homepage": "https://github.com/HaruHunab1320/parallax/tree/main/packages/coding-agent-adapters#readme",
+  "homepage": "https://github.com/HaruHunab1320/coding-agent-adapters#readme",
   "bugs": {
-    "url": "https://github.com/HaruHunab1320/parallax/issues"
+    "url": "https://github.com/HaruHunab1320/coding-agent-adapters/issues"
   },
   "scripts": {
     "build": "tsup",
@@ -48,21 +47,13 @@
   "author": "Parallax",
   "license": "MIT",
   "dependencies": {
-    "adapter-types": "workspace:^",
+    "adapter-types": "^0.2.0",
     "pino": "^9.6.0"
-  },
-  "peerDependencies": {
-    "agent-adapter-monitor": "workspace:^"
-  },
-  "peerDependenciesMeta": {
-    "agent-adapter-monitor": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@pinojs/redact": "^0.4.0",
     "@types/node": "^20.0.0",
-    "pty-manager": "workspace:*",
+    "pty-manager": "^1.11.0",
     "tsup": "^8.0.0",
     "typescript": "^5.3.0",
     "vitest": "^1.0.0"
