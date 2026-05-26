@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.16.4] - 2026-05-26
+
+### Changed
+- Repository extracted from the parallax monorepo into its own standalone repo at `github.com/HaruHunab1320/coding-agent-adapters`. Package metadata (`repository`, `homepage`, `bugs`) updated accordingly. No source code changes.
+- Removed the (optional, workspace-only) `agent-adapter-monitor` peer dependency. The helper was never published to npm and the import inside `pattern-loader.ts` is gated by an optional dynamic require, so callers that did not install it are unaffected.
+
 ## [0.16.3] - 2026-04-07
 
 ### Added
