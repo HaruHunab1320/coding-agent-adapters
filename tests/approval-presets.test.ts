@@ -191,13 +191,14 @@ describe('Approval Presets', () => {
       expect(settings.permissions.deny).toBeUndefined();
     });
 
-    it('autonomous: enables sandbox, adds --tools flag', () => {
+    it('autonomous: enables sandbox, skips --tools allowlist', () => {
       const config = generateClaudeApprovalConfig('autonomous');
       const settings = JSON.parse(config.workspaceFiles[0].content);
       expect(settings.sandbox?.enabled).toBe(true);
       expect(settings.sandbox?.autoAllowBashIfSandboxed).toBe(true);
       expect(settings.permissions.allow).toContain('Bash');
-      expect(config.cliFlags).toContain('--tools');
+      expect(config.cliFlags).toContain('--dangerously-skip-permissions');
+      expect(config.cliFlags).not.toContain('--tools');
     });
 
     it('writes to .claude/settings.json', () => {
