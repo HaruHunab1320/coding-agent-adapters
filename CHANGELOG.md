@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.17.0] - 2026-06-16
+
+### Added
+- **`OpencodeAdapter`** — first-class adapter for [OpenCode](https://opencode.ai), a provider-agnostic coding agent that speaks OpenAI's chat-completions protocol against any compatible endpoint (Anthropic, OpenAI, Cerebras, OpenRouter, Groq, Together, DeepSeek, Ollama, vLLM, plus native Anthropic). `adapterType = 'opencode'`, `displayName = 'OpenCode'`, `memoryFilePath = 'AGENTS.md'`. Implements `detectLogin`, `detectBlockingPrompt`, `detectLoading`, `detectTaskComplete`, `detectReady`, `parseOutput`, `getPromptPattern`, `getHealthCheckCommand` against opencode 1.14.x TUI output patterns. Non-interactive runs use `opencode run --dangerously-skip-permissions <task>` with the task as a positional arg (from `config.adapterConfig.initialPrompt`); interactive runs launch the TUI. Recommended model picks claude-opus-4-7 when an Anthropic key is present, gpt-4o otherwise. Thanks @RemilioNubilio (#3).
+- `'opencode'` added to `AdapterType` union and `ADAPTER_TYPES` registry; `createAllAdapters()` now returns 6 adapters.
+- `generateOpencodeApprovalConfig(preset)` — only `autonomous` adds `--dangerously-skip-permissions`; other presets stay interactive.
+- `BASELINE_PATTERNS` entry for opencode in `pattern-loader.ts`.
+- 24 shape tests for `OpencodeAdapter` covering properties, command/args/env, login detection, blocking prompts, state detection, health check.
+
+### Changed
+- **Claude `autonomous` preset no longer emits `--tools <list>`.** The hardcoded `CLAUDE_TOOL_CATEGORIES` list reflected Claude Code's dev-tier tool registry (`Bash`, `Edit`, `Write`, `Task`, `Skill`, …). On the claude.ai OAuth subscription tier the registry differs (`Monitor`, `ScheduleWakeup`, `ToolSearch`, `EnterPlanMode`, `Cron*`, …), so passing the dev-tier list via `--tools` filtered subscription-tier agents down to a tiny read-only subset (`Read`, `Grep`, `Glob`, `AskUserQuestion`, `TodoWrite`) — the opposite of what "autonomous" means. With `--dangerously-skip-permissions` already set on the autonomous preset, the explicit allowlist was redundant; dropping it makes the preset tier-agnostic. Thanks @RemilioNubilio (#1). **Behavior change for callers that inspected `cliFlags` for `--tools`** — that flag is no longer emitted on the autonomous preset.
+
 ## [0.16.4] - 2026-05-26
 
 ### Changed
