@@ -99,7 +99,12 @@ export class OpencodeAdapter extends BaseCodingAdapter {
     if (this.isInteractive(config)) {
       return [];
     }
-    const args = ['run', '--dangerously-skip-permissions'];
+    const args = ['run'];
+    // The `edit` preset relies on OPENCODE_PERMISSION (see getEnv) and must
+    // not auto-approve: without this flag `run` auto-rejects any prompt.
+    if (this.getApprovalPreset(config) !== 'edit') {
+      args.push('--dangerously-skip-permissions');
+    }
     // OpenCode `run` mode requires the task as a positional argument
     // (it does NOT read from stdin like Claude / Codex). Callers pass
     // the prompt via `config.adapterConfig.initialPrompt` (mirroring
@@ -150,6 +155,14 @@ export class OpencodeAdapter extends BaseCodingAdapter {
     if (credentials.googleKey) {
       env.GOOGLE_API_KEY = credentials.googleKey;
       env.GEMINI_API_KEY = credentials.googleKey;
+    }
+
+    // Approval preset env vars (the `edit` preset sets OPENCODE_PERMISSION,
+    // which OpenCode merges over every config file, including
+    // OPENCODE_CONFIG_CONTENT).
+    const approvalConfig = this.getApprovalConfig(config);
+    if (approvalConfig) {
+      Object.assign(env, approvalConfig.envVars);
     }
 
     return env;

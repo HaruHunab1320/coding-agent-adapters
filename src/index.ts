@@ -53,6 +53,7 @@ export type {
 export {
   AIDER_COMMAND_CATEGORIES,
   CLAUDE_TOOL_CATEGORIES,
+  CODEX_EDIT_OVERRIDES,
   CODEX_TOOL_CATEGORIES,
   GEMINI_TOOL_CATEGORIES,
   generateAiderApprovalConfig,
@@ -61,8 +62,12 @@ export {
   generateCodexApprovalConfig,
   generateGeminiApprovalConfig,
   generateHermesApprovalConfig,
+  generateOpencodeApprovalConfig,
+  getDeniedCategories,
   getPresetDefinition,
+  HERMES_TOOLSET_CATEGORIES,
   listPresets,
+  OPENCODE_PERMISSION_CATEGORIES,
   PRESET_DEFINITIONS,
   TOOL_CATEGORIES,
 } from './approval-presets';

@@ -4,7 +4,6 @@ import type { AdapterType } from '../base-coding-adapter';
 import {
   type ApprovalConfig,
   type ApprovalPreset,
-  CLAUDE_TOOL_CATEGORIES,
   generateApprovalConfig,
   generateClaudeApprovalConfig,
   generateCodexApprovalConfig,
@@ -13,12 +12,20 @@ import {
   PRESET_DEFINITIONS,
 } from '../approval-presets';
 
-const AGENT_TYPES: AdapterType[] = ['claude', 'codex', 'gemini', 'aider'];
+const AGENT_TYPES: AdapterType[] = [
+  'claude',
+  'codex',
+  'gemini',
+  'aider',
+  'hermes',
+  'opencode',
+];
 const PRESETS: ApprovalPreset[] = [
   'readonly',
   'standard',
   'permissive',
   'autonomous',
+  'edit',
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -74,18 +81,9 @@ describe('Claude-specific presets', () => {
     expect(config.cliFlags).toContain('--dangerously-skip-permissions');
   });
 
-  it('autonomous includes --tools flag with tool list', () => {
+  it('autonomous does not pass a --tools allowlist', () => {
     const config = generateApprovalConfig('claude', 'autonomous');
-    const toolsIdx = config.cliFlags.indexOf('--tools');
-    expect(toolsIdx).toBeGreaterThanOrEqual(0);
-
-    const toolList = config.cliFlags[toolsIdx + 1];
-    expect(typeof toolList).toBe('string');
-
-    // Should contain all Claude tool names
-    const allTools = Object.keys(CLAUDE_TOOL_CATEGORIES);
-    const passedTools = toolList.split(',');
-    expect(passedTools).toEqual(expect.arrayContaining(allTools));
+    expect(config.cliFlags).not.toContain('--tools');
   });
 
   it('autonomous workspaceFiles includes .claude/settings.json with sandbox config', () => {
@@ -217,7 +215,7 @@ describe('Edge cases', () => {
 
   it('all presets have non-empty descriptions', () => {
     const presets = listPresets();
-    expect(presets.length).toBe(4);
+    expect(presets.length).toBe(5);
     for (const def of presets) {
       expect(def.description.length).toBeGreaterThan(0);
     }
@@ -230,16 +228,19 @@ describe('Edge cases', () => {
     expect(a).toEqual(b);
   });
 
-  it('PRESET_DEFINITIONS covers all four presets', () => {
+  it('PRESET_DEFINITIONS covers all five presets', () => {
     const presetNames = PRESET_DEFINITIONS.map((d) => d.preset);
-    expect(presetNames).toContain('readonly');
-    expect(presetNames).toContain('standard');
-    expect(presetNames).toContain('permissive');
-    expect(presetNames).toContain('autonomous');
+    expect(presetNames).toEqual([
+      'readonly',
+      'standard',
+      'permissive',
+      'autonomous',
+      'edit',
+    ]);
   });
 
-  it('hermes returns empty cliFlags and workspaceFiles for all presets', () => {
-    for (const preset of PRESETS) {
+  it('hermes returns empty cliFlags and workspaceFiles for all presets except edit', () => {
+    for (const preset of PRESETS.filter((p) => p !== 'edit')) {
       const config = generateApprovalConfig('hermes', preset);
       expect(config.cliFlags).toEqual([]);
       expect(config.workspaceFiles).toEqual([]);

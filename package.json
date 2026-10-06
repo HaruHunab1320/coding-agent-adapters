@@ -1,6 +1,6 @@
 {
   "name": "coding-agent-adapters",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "CLI adapters for AI coding agents - Claude Code, Gemini CLI, OpenAI Codex, Aider, OpenCode, and Hermes Agent",
   "type": "module",
   "main": "./dist/index.cjs",

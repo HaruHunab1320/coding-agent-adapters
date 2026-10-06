@@ -11,12 +11,16 @@ import {
   generateCodexApprovalConfig,
   generateGeminiApprovalConfig,
   generateHermesApprovalConfig,
+  generateOpencodeApprovalConfig,
+  getDeniedCategories,
   getPresetDefinition,
   listPresets,
   PRESET_DEFINITIONS,
   TOOL_CATEGORIES,
   type ToolCategory,
 } from '../src/approval-presets';
+import { HermesAdapter } from '../src/hermes-adapter';
+import { OpencodeAdapter } from '../src/opencode-adapter';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants and helpers
@@ -27,6 +31,7 @@ const ALL_PRESETS: ApprovalPreset[] = [
   'standard',
   'permissive',
   'autonomous',
+  'edit',
 ];
 const ALL_CATEGORIES: ToolCategory[] = [
   'file_read',
@@ -44,9 +49,9 @@ describe('Approval Presets', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('listPresets()', () => {
-    it('returns all 4 presets', () => {
+    it('returns all 5 presets', () => {
       const presets = listPresets();
-      expect(presets).toHaveLength(4);
+      expect(presets).toHaveLength(5);
       expect(presets.map((p) => p.preset)).toEqual(ALL_PRESETS);
     });
 
@@ -380,7 +385,7 @@ describe('Approval Presets', () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 describe('generateHermesApprovalConfig()', () => {
-  it('returns a no-op translation for all presets', () => {
+  it('returns a no-op translation for the four original presets', () => {
     for (const preset of [
       'readonly',
       'standard',
@@ -393,6 +398,405 @@ describe('generateHermesApprovalConfig()', () => {
       expect(config.workspaceFiles).toEqual([]);
       expect(config.envVars).toEqual({});
       expect(config.summary).toContain('Hermes Agent');
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// `edit` preset: unattended file edits, shell / web / agents blocked
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Tools in a per-CLI map whose category is one of `cats`. */
+function toolsIn(
+  mapping: Record<string, ToolCategory>,
+  cats: ToolCategory[]
+): string[] {
+  return Object.entries(mapping)
+    .filter(([, c]) => cats.includes(c))
+    .map(([t]) => t);
+}
+
+function claudeSettings(preset: ApprovalPreset) {
+  const config = generateClaudeApprovalConfig(preset);
+  const file = config.workspaceFiles.find(
+    (f) => f.relativePath === '.claude/settings.json'
+  );
+  if (!file) throw new Error('missing .claude/settings.json');
+  return { config, settings: JSON.parse(file.content) };
+}
+
+describe('edit preset', () => {
+  describe('definition', () => {
+    it('matches the specified categories', () => {
+      expect(getPresetDefinition('edit')).toEqual({
+        preset: 'edit',
+        description:
+          'File reads and edits auto-approved; shell, web and sub-agents blocked. For unattended code changes without command execution.',
+        autoApprove: ['file_read', 'file_write', 'planning'],
+        requireApproval: [],
+        blocked: ['shell', 'web', 'agent'],
+      });
+    });
+
+    it('is listed last, after the four original presets', () => {
+      expect(listPresets().map((p) => p.preset)).toEqual(ALL_PRESETS);
+    });
+
+    it('denies user_interaction because it is not listed anywhere', () => {
+      expect(getDeniedCategories(getPresetDefinition('edit'))).toEqual([
+        'shell',
+        'web',
+        'agent',
+        'user_interaction',
+      ]);
+    });
+
+    it('denied categories equal `blocked` for the four original presets', () => {
+      for (const preset of [
+        'readonly',
+        'standard',
+        'permissive',
+        'autonomous',
+      ] as const) {
+        const def = getPresetDefinition(preset);
+        expect(getDeniedCategories(def)).toEqual(def.blocked);
+      }
+    });
+  });
+
+  describe('Claude Code', () => {
+    const EXPECTED_ALLOW = [
+      'Read',
+      'Grep',
+      'Glob',
+      'LS',
+      'NotebookRead',
+      'LSP',
+      'Write',
+      'Edit',
+      'MultiEdit',
+      'NotebookEdit',
+      'TodoWrite',
+      'TaskCreate',
+      'TaskGet',
+      'TaskList',
+      'TaskUpdate',
+    ];
+    const EXPECTED_DENY = [
+      'Bash',
+      'BashOutput',
+      'KillShell',
+      'TaskOutput',
+      'TaskStop',
+      'PowerShell',
+      'Monitor',
+      'REPL',
+      'WebSearch',
+      'WebFetch',
+      'Task',
+      'Agent',
+      'Skill',
+      'Workflow',
+      'SendMessage',
+      'ListAgents',
+      'ListPeers',
+      'CronCreate',
+      'CronDelete',
+      'CronList',
+      'ScheduleWakeup',
+      'RemoteTrigger',
+      'AskUserQuestion',
+    ];
+
+    it('allows exactly the file, read and planning tools', () => {
+      const { settings } = claudeSettings('edit');
+      expect(settings.permissions.allow).toEqual(EXPECTED_ALLOW);
+    });
+
+    it('denies exactly the shell, web, agent and user-interaction tools', () => {
+      const { settings } = claudeSettings('edit');
+      expect(settings.permissions.deny).toEqual(EXPECTED_DENY);
+    });
+
+    it('denies every shell and web tool and allows none of them', () => {
+      const { settings } = claudeSettings('edit');
+      const shellAndWeb = toolsIn(CLAUDE_TOOL_CATEGORIES, ['shell', 'web']);
+      expect(shellAndWeb).toEqual(
+        expect.arrayContaining(['Bash', 'WebFetch', 'WebSearch'])
+      );
+      for (const tool of shellAndWeb) {
+        expect(settings.permissions.deny).toContain(tool);
+        expect(settings.permissions.allow).not.toContain(tool);
+      }
+    });
+
+    it('allows the edit tools named in the Lookout requirement', () => {
+      const { settings } = claudeSettings('edit');
+      for (const tool of [
+        'Edit',
+        'Write',
+        'MultiEdit',
+        'NotebookEdit',
+        'Read',
+        'Grep',
+        'Glob',
+        'LS',
+      ]) {
+        expect(settings.permissions.allow).toContain(tool);
+      }
+    });
+
+    it('never prompts: no ask rules, dontAsk mode in settings and on the CLI', () => {
+      const { config, settings } = claudeSettings('edit');
+      expect(settings.permissions.ask).toBeUndefined();
+      expect(settings.permissions.defaultMode).toBe('dontAsk');
+      const modeIdx = config.cliFlags.indexOf('--permission-mode');
+      expect(config.cliFlags[modeIdx + 1]).toBe('dontAsk');
+      expect(config.cliFlags).not.toContain('--dangerously-skip-permissions');
+      expect(settings.sandbox).toBeUndefined();
+    });
+
+    it('passes the same settings on the CLI so untrusted workspaces still get the allow list', () => {
+      const { config, settings } = claudeSettings('edit');
+      const idx = config.cliFlags.indexOf('--settings');
+      expect(idx).toBeGreaterThanOrEqual(0);
+      expect(JSON.parse(config.cliFlags[idx + 1])).toEqual(settings);
+    });
+  });
+
+  describe('Claude Code readonly (regression)', () => {
+    it('denies every shell and web tool, including PowerShell and Monitor', () => {
+      const { settings } = claudeSettings('readonly');
+      for (const tool of toolsIn(CLAUDE_TOOL_CATEGORIES, ['shell', 'web'])) {
+        expect(settings.permissions.deny).toContain(tool);
+      }
+      for (const tool of [
+        'Bash',
+        'PowerShell',
+        'Monitor',
+        'REPL',
+        'WebFetch',
+        'WebSearch',
+      ]) {
+        expect(settings.permissions.deny).toContain(tool);
+        expect(settings.permissions.allow).not.toContain(tool);
+      }
+    });
+  });
+
+  describe('Gemini CLI', () => {
+    const config = generateGeminiApprovalConfig('edit');
+    const settings = JSON.parse(config.workspaceFiles[0].content);
+
+    it('auto-approves edits via auto_edit, never yolo', () => {
+      expect(settings.general.defaultApprovalMode).toBe('auto_edit');
+      expect(config.cliFlags).toEqual(['--approval-mode', 'auto_edit']);
+      expect(config.cliFlags).not.toContain('-y');
+      expect(config.cliFlags).not.toContain('--yolo');
+    });
+
+    it('allows exactly the file, read and planning tools', () => {
+      expect(settings.tools.allowed).toEqual(
+        toolsIn(GEMINI_TOOL_CATEGORIES, ['file_read', 'file_write', 'planning'])
+      );
+      expect(settings.tools.allowed).toEqual(
+        expect.arrayContaining(['read_file', 'write_file', 'replace'])
+      );
+    });
+
+    it('excludes exactly the shell, web, agent and ask_user tools', () => {
+      expect(settings.tools.exclude).toEqual([
+        'run_shell_command',
+        'web_fetch',
+        'google_web_search',
+        'activate_skill',
+        'get_internal_docs',
+        'codebase_investigator',
+        'cli_help',
+        'generalist',
+        'browser_agent',
+        'ask_user',
+      ]);
+    });
+
+    it('disables sub-agents and every MCP server', () => {
+      expect(settings.experimental).toEqual({ enableAgents: false });
+      expect(settings.mcp).toEqual({ excluded: ['*'] });
+    });
+  });
+
+  describe('Codex', () => {
+    const config = generateCodexApprovalConfig('edit');
+    const settings = JSON.parse(config.workspaceFiles[0].content);
+
+    it('emits exactly the expected CLI flags', () => {
+      expect(config.cliFlags).toEqual([
+        '--sandbox',
+        'workspace-write',
+        '--ask-for-approval',
+        'never',
+        '-c',
+        'features.shell_tool=false',
+        '-c',
+        'web_search="disabled"',
+        '-c',
+        'features.browser_use=false',
+        '-c',
+        'features.browser_use_external=false',
+        '-c',
+        'features.computer_use=false',
+        '-c',
+        'features.multi_agent=false',
+        '-c',
+        'features.multi_agent_v2=false',
+        '-c',
+        'features.apps=false',
+        '-c',
+        'features.plugins=false',
+      ]);
+    });
+
+    it('never prompts and never bypasses the sandbox', () => {
+      expect(settings.approval_policy).toBe('never');
+      expect(settings.sandbox_mode).toBe('workspace-write');
+      expect(config.cliFlags).not.toContain('--full-auto');
+      expect(config.cliFlags).not.toContain(
+        '--dangerously-bypass-approvals-and-sandbox'
+      );
+    });
+
+    it('turns off the shell tool, web search and multi-agent tools', () => {
+      expect(settings.web_search).toBe('disabled');
+      expect(settings.tools.web_search).toBe(false);
+      expect(settings.features.shell_tool).toBe(false);
+      expect(settings.features.multi_agent).toBe(false);
+      expect(settings.features.multi_agent_v2).toBe(false);
+    });
+
+    it('documents that reads depend on the model when shell is off', () => {
+      expect(config.summary).toContain('read_file');
+    });
+  });
+
+  describe('Aider', () => {
+    const config = generateAiderApprovalConfig('edit');
+
+    it('emits exactly the expected flags and config', () => {
+      expect(config.cliFlags).toEqual([
+        '--yes-always',
+        '--no-suggest-shell-commands',
+        '--no-detect-urls',
+        '--no-auto-lint',
+        '--no-auto-test',
+      ]);
+      expect(config.workspaceFiles[0].content).toBe(
+        'yes-always: true\nsuggest-shell-commands: false\ndetect-urls: false\nauto-lint: false\nauto-test: false\n'
+      );
+    });
+
+    it('documents that typed /run and ! commands cannot be disabled', () => {
+      expect(config.summary).toContain('/run');
+    });
+  });
+
+  describe('Hermes Agent', () => {
+    it('enables only the file and todo toolsets', () => {
+      const config = generateHermesApprovalConfig('edit');
+      expect(config.cliFlags).toEqual(['--toolsets', 'file,todo']);
+    });
+
+    it('HermesAdapter.getArgs appends the toolsets flag', () => {
+      const adapter = new HermesAdapter();
+      expect(
+        adapter.getArgs({
+          name: 't',
+          type: 'hermes',
+          adapterConfig: { approvalPreset: 'edit' },
+        })
+      ).toEqual(['chat', '--toolsets', 'file,todo']);
+      expect(adapter.getArgs({ name: 't', type: 'hermes' })).toEqual(['chat']);
+    });
+  });
+
+  describe('OpenCode', () => {
+    const config = generateOpencodeApprovalConfig('edit');
+    const permission = JSON.parse(config.envVars.OPENCODE_PERMISSION);
+
+    it('emits exactly the expected permission rules', () => {
+      expect(permission).toEqual({
+        '*': 'deny',
+        read: {
+          '*': 'allow',
+          '*.env': 'deny',
+          '*.env.*': 'deny',
+          '*.env.example': 'allow',
+        },
+        glob: 'allow',
+        grep: 'allow',
+        list: 'allow',
+        lsp: 'allow',
+        edit: 'allow',
+        bash: 'deny',
+        webfetch: 'deny',
+        websearch: 'deny',
+        task: 'deny',
+        skill: 'deny',
+        todowrite: 'allow',
+        question: 'deny',
+        external_directory: 'deny',
+        doom_loop: 'deny',
+      });
+      // Catch-all deny must come first: OpenCode rules are last-match-wins.
+      expect(Object.keys(permission)[0]).toBe('*');
+    });
+
+    it('never resolves a permission to "ask"', () => {
+      expect(config.envVars.OPENCODE_PERMISSION).not.toContain('"ask"');
+    });
+
+    it('adapter passes OPENCODE_PERMISSION and drops --dangerously-skip-permissions', () => {
+      const adapter = new OpencodeAdapter();
+      const spawn = {
+        name: 't',
+        type: 'opencode',
+        adapterConfig: { approvalPreset: 'edit' },
+      };
+      expect(adapter.getArgs(spawn)).toEqual(['run']);
+      expect(adapter.getEnv(spawn).OPENCODE_PERMISSION).toBe(
+        config.envVars.OPENCODE_PERMISSION
+      );
+      // Other presets keep the existing behaviour.
+      expect(adapter.getArgs({ name: 't', type: 'opencode' })).toEqual([
+        'run',
+        '--dangerously-skip-permissions',
+      ]);
+    });
+  });
+
+  describe('every adapter', () => {
+    const adapters = [
+      'claude',
+      'gemini',
+      'codex',
+      'aider',
+      'hermes',
+      'opencode',
+    ] as const;
+
+    for (const adapter of adapters) {
+      it(`${adapter}: emits no blanket-approval flags`, () => {
+        const config = generateApprovalConfig(adapter, 'edit');
+        for (const flag of [
+          '--dangerously-skip-permissions',
+          '--dangerously-bypass-approvals-and-sandbox',
+          '--full-auto',
+          '--yolo',
+          '-y',
+          '--auto',
+        ]) {
+          expect(config.cliFlags).not.toContain(flag);
+        }
+      });
     }
   });
 });

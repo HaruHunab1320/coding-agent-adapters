@@ -73,9 +73,17 @@ export class HermesAdapter extends BaseCodingAdapter {
     return 'hermes';
   }
 
-  getArgs(_config: SpawnConfig): string[] {
+  getArgs(config: SpawnConfig): string[] {
     // Force chat mode so startup behavior is consistent with the interactive CLI.
-    return ['chat'];
+    const args = ['chat'];
+
+    // Append approval preset CLI flags (only `edit` emits any: --toolsets)
+    const approvalConfig = this.getApprovalConfig(config);
+    if (approvalConfig) {
+      args.push(...approvalConfig.cliFlags);
+    }
+
+    return args;
   }
 
   getEnv(config: SpawnConfig): Record<string, string> {

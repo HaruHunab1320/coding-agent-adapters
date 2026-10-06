@@ -478,7 +478,7 @@ export abstract class BaseCodingAdapter extends BaseCLIAdapter {
     const preset = this.getApprovalPreset(config);
     if (!preset) return null;
     return generateApprovalConfig(
-      this.adapterType as 'claude' | 'gemini' | 'codex' | 'aider' | 'hermes',
+      this.adapterType as AdapterType,
       preset
     );
   }

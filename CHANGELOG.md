@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.18.0] - 2026-10-06
+
+### Added
+- **`edit` approval preset.** File reads and edits are auto-approved; shell, web and sub-agents are blocked (not prompted), and nothing waits on a human. Meant for unattended code changes on content that may contain planted instructions. `autoApprove: ['file_read', 'file_write', 'planning']`, `requireApproval: []`, `blocked: ['shell', 'web', 'agent']`. `user_interaction` is deliberately not auto-approved because a question to a human stalls an unattended session. `'edit'` is added to the `ApprovalPreset` union and listed last in `PRESET_DEFINITIONS` / `listPresets()`.
+  - Claude Code: `permissions.allow` / `permissions.deny` plus `defaultMode: "dontAsk"`, also passed as `--permission-mode dontAsk --settings <json>` so the allow list applies in untrusted workspaces.
+  - Gemini CLI: `--approval-mode auto_edit`, `tools.allowed` / `tools.exclude`, `experimental.enableAgents: false`, `mcp.excluded: ["*"]`.
+  - Codex: `--sandbox workspace-write --ask-for-approval never` and `-c` overrides that remove the shell tool, web search, and multi-agent/app/plugin tools. Codex can only read files through shell on most models, which the preset summary states.
+  - Aider: `--yes-always --no-suggest-shell-commands --no-detect-urls --no-auto-lint --no-auto-test`.
+  - Hermes Agent: `--toolsets file,todo`. `HermesAdapter.getArgs()` now appends preset CLI flags (only `edit` emits any).
+  - OpenCode: `OPENCODE_PERMISSION` env var with a catch-all deny. `OpencodeAdapter.getEnv()` now merges preset env vars, and `getArgs()` omits `--dangerously-skip-permissions` for `edit`.
+- `getDeniedCategories(def)`: a preset's `blocked` categories plus any it does not list. Generators deny these.
+- `OPENCODE_PERMISSION_CATEGORIES`, `HERMES_TOOLSET_CATEGORIES` and `CODEX_EDIT_OVERRIDES` exports; `generateOpencodeApprovalConfig` is now exported from the package root.
+
+### Fixed
+- **Claude `readonly` did not deny every shell tool on current Claude Code.** `CLAUDE_TOOL_CATEGORIES` now includes `PowerShell`, `Monitor`, `REPL`, `TaskOutput`, `TaskStop` (shell), `Agent`, `Workflow`, `SendMessage`, `ListAgents`, `ListPeers`, `Cron*`, `ScheduleWakeup`, `RemoteTrigger` (agent), `LSP` (file_read) and `TaskCreate/Get/List/Update` (planning), so `readonly` now denies them too. `Bash`, `WebFetch` and `WebSearch` were already denied.
+- `GEMINI_TOOL_CATEGORIES` adds `grep_search` (current name of `search_file_content`), the built-in sub-agents (`codebase_investigator`, `cli_help`, `generalist`, `browser_agent`) and the `tracker_*` tools. `readonly` now also excludes the sub-agents.
+- `CODEX_TOOL_CATEGORIES` adds the classic `shell` / `local_shell` / `js_repl` tools and the MCP resource tools; `view_image` moves from `web` to `file_read` (it attaches a local file).
+- Removed a stale test in `src/__tests__/approval-presets.test.ts` that still expected the `--tools` flag dropped in 0.17.0.
+
 ## [0.17.0] - 2026-06-16
 
 ### Added

@@ -285,7 +285,7 @@ await adapter.writeMemoryFile('/path/to/workspace', '# Task-Specific Context\n..
 
 ## Approval Presets
 
-Each coding agent CLI has its own config format for controlling tool permissions. The approval preset system provides 4 named levels that translate to the correct per-CLI config files and CLI flags.
+Each coding agent CLI has its own config format for controlling tool permissions. The approval preset system provides 5 named presets that translate to the correct per-CLI config files, CLI flags and env vars.
 
 ### Preset Levels
 
@@ -295,6 +295,9 @@ Each coding agent CLI has its own config format for controlling tool permissions
 | `standard` | Standard dev. Reads + web auto, writes/shell prompt. | file_read, planning, user_interaction, web | file_write, shell, agent | — |
 | `permissive` | File ops auto-approved, shell still prompts. | file_read, file_write, planning, user_interaction, web, agent | shell | — |
 | `autonomous` | Everything auto-approved. Use with sandbox. | all categories | — | — |
+| `edit` | File reads and edits auto-approved; shell, web and sub-agents blocked. For unattended code changes without command execution. | file_read, file_write, planning | — | shell, web, agent |
+
+A category a preset does not list at all is not granted: generators deny it wherever the CLI can (`getDeniedCategories(def)` returns `blocked` plus the unlisted categories). `edit` leaves out `user_interaction` on purpose, because a question to a human would stall an unattended session, so the agent's ask-the-user tool is denied too.
 
 ### Generating Configs
 
@@ -354,7 +357,23 @@ const writtenFiles = await adapter.writeApprovalConfig('/path/to/workspace', {
 | Gemini CLI | `.gemini/settings.json` | `general.defaultApprovalMode`, `tools.allowed`, `tools.exclude` |
 | Codex | `.codex/config.json` | `approval_policy`, `sandbox_mode`, `tools.web_search` |
 | Aider | `.aider.conf.yml` | `yes-always`, `no-auto-commits` |
-| Hermes Agent | none (CLI-managed) | approvals currently handled in-session by Hermes safety prompts |
+| Hermes Agent | none (CLI-managed) | approvals currently handled in-session by Hermes safety prompts; `edit` passes `--toolsets` |
+| OpenCode | none | `--dangerously-skip-permissions` (autonomous); `OPENCODE_PERMISSION` env var (`edit`) |
+
+### The `edit` preset
+
+`edit` is for running an agent unattended (for example in a disposable container) on content that may contain planted instructions. The agent can read and edit files without prompts; shell commands, web access and sub-agents are blocked outright rather than prompted, and nothing waits on a human.
+
+| CLI | How `edit` is enforced | Limits |
+|-----|------------------------|--------|
+| Claude Code | `permissions.allow` (Read, Grep, Glob, LS, NotebookRead, LSP, Write, Edit, MultiEdit, NotebookEdit, TodoWrite, Task*), `permissions.deny` (Bash, PowerShell, Monitor, REPL, background-task tools, WebFetch, WebSearch, Agent/Task, Skill, Workflow, SendMessage, cron and remote-trigger tools, AskUserQuestion), `defaultMode: "dontAsk"`. The same settings are passed with `--settings` plus `--permission-mode dontAsk`. | `dontAsk` denies anything not allowed, including MCP tools, tools newer than this list, and writes to protected paths such as `.git/` and `.claude/`. The `--settings` copy matters: Claude Code ignores a project's `permissions.allow` until the workspace has been trusted interactively. |
+| Gemini CLI | `--approval-mode auto_edit`; `tools.allowed` for file and planning tools; `tools.exclude` for `run_shell_command`, `web_fetch`, `google_web_search`, skills, the built-in sub-agents and `ask_user`; `experimental.enableAgents: false`; `mcp.excluded: ["*"]`. | Gemini only reads `.gemini/settings.json` from a trusted folder. Folder trust is off by default; if you turn it on, trust the workspace or the exclusions do not apply. `tools.allowed` / `tools.exclude` are deprecated in favour of the policy engine. |
+| Codex | `--sandbox workspace-write --ask-for-approval never`, plus `-c` overrides that remove the shell tool (`features.shell_tool=false`), web search (`web_search="disabled"`, browser features off), and multi-agent, app and plugin tools. | Codex reads files through its shell tool. With shell removed the agent can only read files on models that ship `read_file` / `list_dir` / `grep_files`, so expect `edit` to be much less useful on Codex. MCP servers in the user's `~/.codex/config.toml` are not removed. |
+| Aider | `--yes-always --no-suggest-shell-commands --no-detect-urls --no-auto-lint --no-auto-test` (and the same keys in `.aider.conf.yml`). | Aider has no model-callable shell or web tool, but it still runs `/run`, `/test`, `/git`, `/web` and `!` commands typed into its input. Never forward untrusted text that starts with `/` or `!`. |
+| Hermes Agent | `hermes chat --toolsets file,todo`: terminal, code execution, web, browser, delegation, skills, clarify and MCP toolsets are never registered. | Writes to `~/.ssh/config` still ask for approval in interactive sessions. |
+| OpenCode | `OPENCODE_PERMISSION` env var (merged over every config file): `"*": "deny"` first, then allow read/glob/grep/list/lsp/edit/todowrite and deny bash/webfetch/websearch/task/skill/question/external_directory/doom_loop. `run` mode drops `--dangerously-skip-permissions`, so anything left over is auto-rejected. | Agent-level `permission` blocks in a project's `opencode.json` are applied per agent and can override the global rules. |
+
+Use `writeApprovalConfig()` before spawning and pass the adapter's `getArgs()` / `getEnv()` output unchanged: some of the enforcement lives in CLI flags and env vars, not only in the workspace files.
 
 ## Preflight Check
 
