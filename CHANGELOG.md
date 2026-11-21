@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.18.1] - 2026-11-21
+
+### Fixed
+- **Claude conversational questions no longer become unknown blocking prompts.** Recognizable task questions, including chunks without a trailing newline, defer to the existing parsed-output/question channel. The PTY manager still determines when a turn ends; this change neither answers the question nor marks a streamed fragment complete. Login, permission, configuration and menu prompts retain their existing priority and behavior.
+
 ## [0.18.0] - 2026-10-06
 
 ### Added
