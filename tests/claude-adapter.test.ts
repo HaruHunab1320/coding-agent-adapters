@@ -315,6 +315,54 @@ describe('ClaudeAdapter', () => {
       expect(result.detected).toBe(false);
     });
 
+    it.each([
+      'Which seat count should the booking retain?',
+      'Which seat count should the booking retain?\n',
+      'I need the expected behavior before changing validation.\nShould invalid quantities be rejected or clamped to one?\n',
+    ])('leaves a conversational question for the completed-turn question event: %s', (output) => {
+      const parsed = adapter.parseOutput(`${output}\n`);
+      expect(parsed?.isQuestion).toBe(true);
+      expect(adapter.detectBlockingPrompt(output)).toEqual({ detected: false });
+    });
+
+    it('does not turn the semantic question classification into a completed response', () => {
+      const fragment = 'Which seat count should the booking retain?';
+      expect(adapter.parseOutput(fragment)).toBeNull();
+      expect(adapter.detectTaskComplete(fragment)).toBe(false);
+      expect(adapter.detectBlockingPrompt(fragment)).toEqual({ detected: false });
+    });
+
+    it('leaves a rendered completed question on the existing parsed-question path', () => {
+      const output = 'Which seat count should the booking retain?\n\n✻ Cooked for 1s\n❯ \n';
+      expect(adapter.detectTaskComplete(output)).toBe(true);
+      expect(adapter.parseOutput(output)?.isQuestion).toBe(true);
+      expect(adapter.detectBlockingPrompt(output)).toEqual({ detected: false });
+    });
+
+    it.each([
+      ['API key not found. Which seat count should the booking retain?\n', 'login', false],
+      ['Do you want to proceed?\n', 'permission', true],
+      ['Allow access to project files? [y/n]\n', 'permission', true],
+      ['Can I grant access to this directory?\n', 'permission', false],
+      ['Accept the license agreement? [y/n]\n', 'tos', false],
+      ['Choose a model?\n1) claude-3-opus\n2) claude-3-sonnet\n', 'model_select', false],
+      ['/agents Which agent? Enter to select · Esc to go back\n', 'config', false],
+      ['Which option?\n1. First\n2. Second\n', 'unknown', false],
+      ['Continue? [y/n]\n', 'unknown', false],
+      ['Press enter to continue?\n', 'unknown', false],
+    ] as const)('preserves a higher-priority blocking prompt: %s', (output, type, canAutoRespond) => {
+      const result = adapter.detectBlockingPrompt(output);
+      expect(result.detected).toBe(true);
+      expect(result.type).toBe(type);
+      expect(result.canAutoRespond).toBe(canAutoRespond);
+    });
+
+    it('does not interpret a lone question mark as a conversational task question', () => {
+      const result = adapter.detectBlockingPrompt('?\n');
+      expect(result.detected).toBe(true);
+      expect(result.type).toBe('unknown');
+    });
+
     it('should detect optional survey with dismiss response', () => {
       const result = adapter.detectBlockingPrompt(
         'How is Claude doing this session? (optional) 1: Bad 2: Fine 3: Good 0: Dismiss'
