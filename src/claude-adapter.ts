@@ -875,8 +875,26 @@ jq -nc \
       return { detected: false };
     }
 
-    // Fall back to base class detection
-    return super.detectBlockingPrompt(output);
+    const fallback = super.detectBlockingPrompt(output);
+    if (
+      fallback.detected &&
+      fallback.type === 'unknown' &&
+      fallback.instructions === 'Question prompt detected' &&
+      !fallback.options &&
+      !fallback.suggestedResponse &&
+      /[\p{L}\p{N}]/u.test(fallback.prompt ?? '')
+    ) {
+      // This generic prose-question fallback is not a permission/menu blocker.
+      // Normalize only for semantic classification: a streamed question may
+      // not yet end in a newline. PTY turn framing must still decide WHEN the
+      // existing parsed-output/question event is emitted; this supplies no
+      // answer and does not change parseOutput or task-completion detection.
+      const parsed = this.parseOutput(`${output}\n`);
+      if (parsed?.type === 'question' && parsed.isQuestion) {
+        return { detected: false };
+      }
+    }
+    return fallback;
   }
 
   /**
